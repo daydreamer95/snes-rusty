@@ -1,4 +1,5 @@
 pub mod cpu;
+pub mod ops_code;
 
 #[macro_use]
 extern crate lazy_static;
@@ -55,5 +56,8 @@ fn main() {
     let games_code: &Vec<u8> = &(*TEST_ASSEMBLY_CODE);
 
     cpu.load_program(games_code.clone());
-    println!("I'm preparing cpu {cpu:?}!");
+    cpu.reset();
+    //println!("I'm preparing cpu {cpu:?}!");
+    cpu.run();
+    //println!("After I run the program {cpu:?}!");
 }

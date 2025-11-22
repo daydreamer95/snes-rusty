@@ -1,3 +1,7 @@
+use crate::ops_code::OPCODES_MAP;
+use crate::ops_code::Opcode;
+use std::collections::HashMap;
+
 const MEMORY_SIZE: u16 = 0xFFFF;
 const PROGRAM_ROM_MEMORY_ADDRESS_START: u16 = 0x0600;
 const RESET_INTERRUPT_ADDR: u16 = 0xFFFC;
@@ -57,10 +61,54 @@ impl CPU {
         Self::default()
     }
 
+    pub fn run(&mut self) {
+        let all_op_codes: &HashMap<u8, &'static Opcode> = &(*OPCODES_MAP);
+
+        loop {
+            let code = self.mem_read(self.program_counter);
+            self.program_counter += 1;
+            let current_program_counter_state = self.program_counter;
+
+            let current_opcode = all_op_codes
+                .get(&code)
+                .unwrap_or_else(|| panic!("OP code {:x} not found", code));
+
+            println!("Current ops code: {:#?}", current_opcode);
+            match code {
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
+                    self.lda(&current_opcode.addressing_mode);
+                }
+                0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
+                    self.sta(&current_opcode.addressing_mode);
+                }
+                _ => return,
+            }
+
+            if current_program_counter_state == self.program_counter {
+                self.program_counter += (current_opcode.bytes - 1) as u16;
+            }
+        }
+    }
+
+    // reset response for program state. Must be reset before program ROM actually run
+    // 1. LOAD ROM
+    // 2. RESET
+    // 3. RUN
+    pub fn reset(&mut self) {
+        self.stack_pointer = STACK_STARTING_POINTER;
+        self.accumulator = 0;
+        self.register_x = 0;
+        self.register_y = 0;
+        self.flags = 0b0000_0000;
+        self.program_counter = self.mem_read_u16(RESET_INTERRUPT_ADDR);
+    }
+
     pub fn load_program(&mut self, program: Vec<u8>) {
         self.memory[PROGRAM_ROM_MEMORY_ADDRESS_START as usize
             ..(PROGRAM_ROM_MEMORY_ADDRESS_START as usize + program.len())]
             .copy_from_slice(&program[..]);
+
+        self.mem_write_u16(RESET_INTERRUPT_ADDR, PROGRAM_ROM_MEMORY_ADDRESS_START);
     }
 
     pub fn mem_read(&self, addr: u16) -> u8 {
@@ -71,12 +119,19 @@ impl CPU {
         let lsb = self.mem_read(addr) as u16;
         let msb = self.mem_read(addr + 1) as u16;
 
-        println!("result: {:#06x}", (msb << 8) | (lsb as u16) as u16);
         (msb << 8) | (lsb as u16)
     }
 
     pub fn mem_write(&mut self, addr: u16, data: u8) {
         self.memory[addr as usize] = data
+    }
+
+    pub fn mem_write_u16(&mut self, addr: u16, data: u16) {
+        let lsb = (data & 0xFF) as u8;
+        let hsb = (data >> 8) as u8;
+
+        self.mem_write(addr, lsb);
+        self.mem_write(addr + 1, hsb);
     }
 
     pub fn get_indirect_lookup(&self, lookup_addr: u16) -> u16 {
@@ -163,6 +218,7 @@ impl CPU {
     fn lda(&mut self, addressing_mode: &AddressingMode) {
         let operand_addr = self.get_operand_addr(addressing_mode);
         let param = self.mem_read(operand_addr);
+        println!("lda params: {:x?}", param);
 
         self.accumulator = param;
         self.update_negative_and_zero_flags(self.accumulator);
