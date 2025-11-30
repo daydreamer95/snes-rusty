@@ -37,6 +37,16 @@ pub struct CPU {
     pub register_y: u8,
     pub program_counter: u16,
     pub stack_pointer: u8,
+    // flags. The flags is nothing more than 1-bit values that tells us the current state of
+    // the operations happening in the CPU. In repsective order they are then
+    // #76543210
+    // 7 - Negative result
+    // 6 - Overflow
+    // 4 - Break
+    // 3 - Decimal mode
+    // 2 - Interupt disable
+    // 1 - Zero result
+    // 0 - Carry
     pub flags: u8,
     memory: [u8; MEMORY_SIZE as usize], // 16 bit address model. Going from $0000 to $FFFF
 }
@@ -80,6 +90,9 @@ impl CPU {
                 }
                 0x85 | 0x95 | 0x8D | 0x9D | 0x99 | 0x81 | 0x91 => {
                     self.sta(&current_opcode.addressing_mode);
+                }
+                0x90 => {
+                    self.bcc(&current_opcode.addressing_mode);
                 }
                 _ => return,
             }
@@ -162,6 +175,27 @@ impl CPU {
         }
     }
 
+    fn update_carry_and_overflow_flag(&mut self, result: Option<u8>, op: MathematicalOperation) {
+        match result {
+            Some(_e) => {
+                self.clear_overflow_flag();
+                if op == MathematicalOperation::Sub {
+                    self.set_carry_flag();
+                } else {
+                    self.clear_carry_flag();
+                }
+            }
+            None => {
+                self.clear_overflow_flag();
+                if op == MathematicalOperation::Sub {
+                    self.clear_carry_flag();
+                } else {
+                    self.set_carry_flag();
+                }
+            }
+        }
+    }
+
     //# SET CPU FLAG
     fn set_zero_flag(&mut self) {
         self.flags |= 0b0000_00010;
@@ -169,6 +203,22 @@ impl CPU {
 
     fn clear_zero_flag(&mut self) {
         self.flags &= 0b1111_1101;
+    }
+
+    fn set_overflow_flag(&mut self) {
+        self.flags |= 0b0100_0000;
+    }
+
+    fn clear_overflow_flag(&mut self) {
+        self.flags &= 0b1011_1111;
+    }
+
+    fn set_carry_flag(&mut self) {
+        self.flags |= 0b0000_0001;
+    }
+
+    fn clear_carry_flag(&mut self) {
+        self.flags &= 0b1111_1110;
     }
 
     fn get_operand_addr(&self, mode: &AddressingMode) -> u16 {
@@ -213,6 +263,36 @@ impl CPU {
         }
     }
 
+    //add_relative_displacement_to_program_counter because of little endianess of cpu 6502.
+    // we must manually do add/sub on program counter.
+    fn add_relative_displacement_to_program_counter(&mut self, step: u8) {
+        let mut lsb_program_counter = (self.program_counter & 0xFF) as u8;
+        let mut msb_program_counter = (self.program_counter >> 8) as u8;
+
+        let step_as_i8 = step as i8;
+        let step_as_i8_mult_minus_one = -step_as_i8;
+        let positive = step_as_i8.signum() == 1;
+
+        if positive {
+            let wrap = lsb_program_counter.checked_add(step);
+            lsb_program_counter = lsb_program_counter.wrapping_add(step);
+            match wrap {
+                Some(_) => (),
+                None => msb_program_counter = msb_program_counter.wrapping_add(1),
+            }
+        } else {
+            let wrap = lsb_program_counter.checked_sub(step_as_i8_mult_minus_one as u8);
+            lsb_program_counter = lsb_program_counter.wrapping_sub(step_as_i8_mult_minus_one as u8);
+
+            match wrap {
+                Some(_) => (),
+                None => msb_program_counter = msb_program_counter.wrapping_sub(1),
+            }
+        }
+
+        self.program_counter = (msb_program_counter as u16) << 8 | (lsb_program_counter as u16);
+    }
+
     // lda https://www.nesdev.org/obelisk-6502-guide/reference.html#LDA
     // Load Accumulator
     fn lda(&mut self, addressing_mode: &AddressingMode) {
@@ -223,6 +303,89 @@ impl CPU {
         self.accumulator = param;
         self.update_negative_and_zero_flags(self.accumulator);
     }
+
+    // adc https://www.nesdev.org/obelisk-6502-guide/reference.html#ADC
+    // Add with carry
+    fn adc(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        let old_accumulator = self.accumulator;
+
+        self.accumulator = self.accumulator.wrapping_add(param);
+
+        self.update_negative_and_zero_flags(self.accumulator);
+        self.update_carry_and_overflow_flag(
+            old_accumulator.checked_add(param),
+            MathematicalOperation::Add,
+        );
+    }
+
+    // and https://www.nesdev.org/obelisk-6502-guide/reference.html#AND
+    // Logical AND
+    fn and(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        self.accumulator &= param;
+        self.update_negative_and_zero_flags(self.accumulator);
+    }
+
+    // asl https://www.nesdev.org/obelisk-6502-guide/reference.html#ASL
+    // ASL Arithmetic Shift Left
+    fn asl(&mut self, addressing_mode: &AddressingMode) {
+        let seventhBit = format!("{:08b}", self.accumulator)
+            .chars()
+            .collect::<Vec<char>>()[0];
+
+        // If accumulator mode, we changing the value.
+        // If not, we modifying shift left content of address read from that mode
+        if *addressing_mode == AddressingMode::Accumulator {
+            self.accumulator = self.accumulator << 1;
+        } else {
+            let operand_addr = self.get_operand_addr(addressing_mode);
+            let param = self.mem_read(operand_addr);
+
+            self.accumulator = param << 1;
+        }
+
+        self.update_negative_and_zero_flags(self.accumulator);
+        // Update carry flags with old sventh bit
+        let bit = format!("00000000{}", seventhBit);
+        let new_bits = u8::from_str_radix(&bit, 2).unwrap();
+        self.flags |= new_bits;
+    }
+
+    // bcc - Branch if Carry Clear
+    // https://www.nesdev.org/obelisk-6502-guide/reference.html#BCC
+    fn bcc(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        let step = param + 1;
+
+        // if carry flag is not set
+        if self.flags & 0x0000_00001 == 0 {
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
+
+    // bcs Branch if Carry set
+    fn bcs(&mut self, addressing_mode: &AddressingMode) {}
+    // beq Branch if Equal
+    fn beq(&mut self, addressing_mode: &AddressingMode) {}
+    // bit test
+    fn bit(&mut self, addressing_mode: &AddressingMode) {}
+    // BIM Branch if Minus
+    fn bim(&mut self, addressing_mode: &AddressingMode) {}
+
+    // BNE Branch if not equal
+    fn bne(&mut self, addressing_mode: &AddressingMode) {}
+    // BPL Branch if Positive
+    fn bpl(&mut self, addressing_mode: &AddressingMode) {}
+
+    // BRK Force Interrupt
+    fn brk(&mut self, addressing_mode: &AddressingMode) {}
 
     // ldx https://www.nesdev.org/obelisk-6502-guide/reference.html#LDX
     // Load X Register
