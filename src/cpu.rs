@@ -221,6 +221,26 @@ impl CPU {
         self.flags &= 0b1111_1110;
     }
 
+    // Stack operator
+    fn get_address_from_stack(&self) -> u16 {
+        let absolute_stack_pointer = format!("01{:X}", self.stack_pointer);
+        u16::from_str_radix(&absolute_stack_pointer, 16).unwrap()
+    }
+
+    // Notice one thing the 6502 stack address is starting from top to down.
+    // For EG: if we got 2 value added to the stack, first one gonna be inserted
+    // at $01FF and second one at $01FE so we add we actually decrement the address pointer by 1
+    fn insert_address_into_stack(&mut self) -> u16 {
+        let address = self.get_address_from_stack();
+        self.stack_pointer -= 1;
+        address
+    }
+
+    fn pop_address_from_stack(&mut self) -> u16 {
+        self.stack_pointer += 1;
+        self.get_address_from_stack()
+    }
+
     fn get_operand_addr(&self, mode: &AddressingMode) -> u16 {
         match mode {
             AddressingMode::Immediate => self.program_counter,
@@ -371,18 +391,67 @@ impl CPU {
     }
 
     // bcs Branch if Carry set
-    fn bcs(&mut self, addressing_mode: &AddressingMode) {}
+    fn bcs(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        let step = param + 1;
+
+        // if carry flag is not set
+        if self.flags & 0x0000_00001 == 1 {
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
     // beq Branch if Equal
-    fn beq(&mut self, addressing_mode: &AddressingMode) {}
+    fn beq(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        let step = param + 1;
+
+        if self.flags & 0x0000_0010 == 2 {
+            // Zero flags is set
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
     // bit test
-    fn bit(&mut self, addressing_mode: &AddressingMode) {}
-    // BIM Branch if Minus
-    fn bim(&mut self, addressing_mode: &AddressingMode) {}
+    fn bit(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+    }
+    // BMI Branch if Minus
+    fn bmi(&mut self, addressing_mode: &AddressingMode) {
+        // If negative flag is set
+        if self.flags & 0b1000_0000 == 255 {
+            let operand_addr = self.get_operand_addr(addressing_mode);
+            let param = self.mem_read(operand_addr);
+
+            let step = param + 1;
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
 
     // BNE Branch if not equal
-    fn bne(&mut self, addressing_mode: &AddressingMode) {}
+    fn bne(&mut self, addressing_mode: &AddressingMode) {
+        if self.flags & 0b0000_0010 == 0 {
+            let operand_addr = self.get_operand_addr(addressing_mode);
+            let param = self.mem_read(operand_addr);
+
+            let step = param + 1;
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
     // BPL Branch if Positive
-    fn bpl(&mut self, addressing_mode: &AddressingMode) {}
+    fn bpl(&mut self, addressing_mode: &AddressingMode) {
+        // If negative flag is clear
+        if self.flags & 0b0000_0000 == 0 {
+            let operand_addr = self.get_operand_addr(addressing_mode);
+            let param = self.mem_read(operand_addr);
+
+            let step = param + 1;
+            self.add_relative_displacement_to_program_counter(step);
+        }
+    }
 
     // BRK Force Interrupt
     fn brk(&mut self, addressing_mode: &AddressingMode) {}
