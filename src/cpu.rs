@@ -610,6 +610,29 @@ impl CPU {
         self.program_counter = operand_addr;
     }
 
+    fn nop(&mut self, addressing_mode: &AddressingMode) {}
+
+    //NOP - No Operation
+    // The NOP instruction causes no changes to the processor other than the normal incrementing of the program counter to the next instruction.
+    fn nop(&mut self, addressing_mode: &AddressingMode) {}
+
+    // ORA - Logical Inclusive OR
+    // An inclusive OR is performed, bit by bit, on the accumulator contents using the contents of a byte of memory.
+    fn ora(&mut self, addressing_mode: &AddressingMode) {}
+
+    // PHA - Push Accumulator
+    // Pushes a copy of the accumulator on to the stack.
+    fn pha(&mut self, addressing_mode: &AddressingMode) {}
+    //PHP - Push Processor Status
+    //Pushes a copy of the status flags on to the stack.
+    fn php(&mut self, addressing_mode: &AddressingMode) {}
+
+    fn pla(&mut self, addressing_mode: &AddressingMode) {}
+    fn plp(&mut self, addressing_mode: &AddressingMode) {}
+    fn rol(&mut self, addressing_mode: &AddressingMode) {}
+    fn ror(&mut self, addressing_mode: &AddressingMode) {}
+    fn rti(&mut self, addressing_mode: &AddressingMode) {}
+
     // ldx https://www.nesdev.org/obelisk-6502-guide/reference.html#LDX
     // Load X Register
     fn ldx(&mut self, addressing_mode: &AddressingMode) {
@@ -638,4 +661,49 @@ impl CPU {
         let operand_addr = self.get_operand_addr(addressing_mode);
         self.mem_write(operand_addr, self.accumulator);
     }
+
+    // SBC - Subtract with Carry
+    // This instruction subtracts the contents of a memory location to the accumulator together with the not of the carry bit. If overflow occurs the carry bit is clear, this enables multiple byte subtraction to be performed.
+    fn sbc(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        let param = self.mem_read(operand_addr);
+
+        let old_accumulator = self.accumulator;
+
+        self.accumulator = self.accumulator.wrapping_sub(param);
+        self.update_negative_and_zero_flags(self.accumulator);
+        self.update_carry_and_overflow_flags(
+            old_accumulator.checked_sub(param),
+            MathematicalOperation::Sub,
+        );
+    }
+
+    fn sec(&mut self, addressing_mode: &AddressingMode) {}
+    fn set(&mut self, addressing_mode: &AddressingMode) {}
+    fn sed(&mut self, addressing_mode: &AddressingMode) {}
+    fn sei(&mut self, addressing_mode: &AddressingMode) {}
+
+    fn stx(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        self.mem_write(operand_addr, self.register_x);
+    }
+
+    fn sty(&mut self, addressing_mode: &AddressingMode) {
+        let operand_addr = self.get_operand_addr(addressing_mode);
+        self.mem_write(operand_addr, self.register_y);
+    }
+
+    fn tax(&mut self) {
+        self.register_x = self.accumulator;
+        self.update_negative_and_zero_flags(self.register_x);
+    }
+
+    fn txa(&mut self) {
+        self.accumulator = self.register_x;
+        self.update_negative_and_zero_flags(self.accumulator);
+    }
+
+    fn tsx(&mut self, addressing_mode: &AddressingMode) {}
+    fn txs(&mut self, addressing_mode: &AddressingMode) {}
+    fn tya(&mut self, addressing_mode: &AddressingMode) {}
 }
