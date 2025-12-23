@@ -442,7 +442,6 @@ impl CPU {
     fn lda(&mut self, addressing_mode: &AddressingMode) {
         let operand_addr = self.get_operand_addr(addressing_mode);
         let param = self.mem_read(operand_addr);
-        println!("lda params: {:x?}", param);
 
         self.accumulator = param;
         self.update_negative_and_zero_flags(self.accumulator);

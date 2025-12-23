@@ -53,7 +53,7 @@ lazy_static! {
 
 fn main() {
     let mut cpu = cpu::CPU::new();
-    let games_code: &Vec<u8> = &(*TEST_ASSEMBLY_CODE);
+    let games_code: &Vec<u8> = &(*SNAKE_GAME_CODE);
 
     cpu.load_program(games_code.clone());
     cpu.reset();
