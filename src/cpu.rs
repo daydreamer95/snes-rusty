@@ -82,9 +82,12 @@ impl CPU {
 
             let current_opcode = all_op_codes
                 .get(&code)
-                .unwrap_or_else(|| panic!("OP code {:x} not found", code));
+                .unwrap_or_else(|| panic!("OP code {:X} not found", code));
 
-            println!("Current ops code: {:#?}", current_opcode);
+            println!(
+                "Current ops code: {:X?} and program counter {:X?}",
+                current_opcode, current_program_counter_state
+            );
             match code {
                 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
                     self.adc(&current_opcode.addressing_mode);
@@ -146,7 +149,7 @@ impl CPU {
                 0x4A | 0x46 | 0x56 | 0x4E | 0x5E => {
                     self.lsr(&current_opcode.addressing_mode);
                 }
-                0xEA => self.nop(&current_opcode.addressing_mode),
+                0xEA => self.nop(),
                 0x09 | 0x05 | 0x15 | 0x0D | 0x1D | 0x19 | 0x01 | 0x11 => {
                     self.ora(&current_opcode.addressing_mode);
                 }
@@ -483,16 +486,19 @@ impl CPU {
 
         // If accumulator mode, we changing the value.
         // If not, we modifying shift left content of address read from that mode
+        let mut result: u8;
         if *addressing_mode == AddressingMode::Accumulator {
             self.accumulator = self.accumulator << 1;
+            result = self.accumulator
         } else {
             let operand_addr = self.get_operand_addr(addressing_mode);
             let param = self.mem_read(operand_addr);
-
-            self.accumulator = param << 1;
+            result = param << 1;
+            self.accumulator = result;
+            self.mem_write(operand_addr, result)
         }
 
-        self.update_negative_and_zero_flags(self.accumulator);
+        self.update_negative_and_zero_flags(result);
         // Update carry flags with old sventh bit
         let bit = format!("00000000{}", seventhBit);
         let new_bits = u8::from_str_radix(&bit, 2).unwrap();
@@ -750,7 +756,7 @@ impl CPU {
 
     //NOP - No Operation
     // The NOP instruction causes no changes to the processor other than the normal incrementing of the program counter to the next instruction.
-    fn nop(&mut self, addressing_mode: &AddressingMode) {
+    fn nop(&mut self) {
         //do nothing
     }
 
@@ -852,7 +858,11 @@ impl CPU {
     }
 
     fn rts(&mut self) {
-        self.program_counter = self.pop_address_from_stack();
+        let lsb = self.memory[self.pop_address_from_stack() as usize];
+        let hsb = self.memory[self.pop_address_from_stack() as usize];
+
+        let new_program_counter = (hsb as u16) << 8 | (lsb as u16);
+        self.program_counter = new_program_counter + 1;
     }
 
     // ldx https://www.nesdev.org/obelisk-6502-guide/reference.html#LDX
