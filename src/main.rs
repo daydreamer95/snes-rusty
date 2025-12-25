@@ -1,5 +1,5 @@
-pub mod cpu;
-pub mod ops_code;
+pub use mos6502::cpu;
+pub use mos6502::ops_code;
 
 #[macro_use]
 extern crate lazy_static;
